@@ -680,12 +680,48 @@ local ExecuteCommand = function(Name, Args, Caller)
                     if (sub(lowName, 1, 2) == "un" and rawget(_L.CommandsTable, sub(lowName, 3))) then
                         _L.ActiveToggles[sub(lowName, 3)] = nil
                         _L.ActiveValues[sub(lowName, 3)] = nil
-                    elseif (lowName == "clip") then
+                    elseif (lowName == "clip" or lowName == "unnoclip") then
                         _L.ActiveToggles["noclip"] = nil
                         _L.ActiveValues["noclip"] = nil
                     elseif (lowName == "thaw") then
                         _L.ActiveToggles["freeze"] = nil
                         _L.ActiveValues["freeze"] = nil
+                    elseif (lowName == "unwalkspeed" or lowName == "unws" or lowName == "unspeed") then
+                        _L.ActiveToggles["walkspeed"] = nil
+                        _L.ActiveValues["walkspeed"] = nil
+                    elseif (lowName == "unjumppower" or lowName == "unjp") then
+                        _L.ActiveToggles["jumppower"] = nil
+                        _L.ActiveValues["jumppower"] = nil
+                    elseif (lowName == "unhipheight" or lowName == "unhh") then
+                        _L.ActiveToggles["hipheight"] = nil
+                        _L.ActiveValues["hipheight"] = nil
+                    elseif (lowName == "walkspeed" or lowName == "speed" or lowName == "ws") then
+                        local speedVal = tonumber(Args and Args[1]) or 16
+                        if (speedVal == 16) then
+                            _L.ActiveToggles["walkspeed"] = nil
+                            _L.ActiveValues["walkspeed"] = nil
+                        else
+                            _L.ActiveToggles["walkspeed"] = true
+                            _L.ActiveValues["walkspeed"] = speedVal
+                        end
+                    elseif (lowName == "jumppower" or lowName == "jp") then
+                        local jpVal = tonumber(Args and Args[1]) or 50
+                        if (jpVal == 50) then
+                            _L.ActiveToggles["jumppower"] = nil
+                            _L.ActiveValues["jumppower"] = nil
+                        else
+                            _L.ActiveToggles["jumppower"] = true
+                            _L.ActiveValues["jumppower"] = jpVal
+                        end
+                    elseif (lowName == "hipheight" or lowName == "hh") then
+                        local hhVal = tonumber(Args and Args[1]) or 0
+                        if (hhVal == 0) then
+                            _L.ActiveToggles["hipheight"] = nil
+                            _L.ActiveValues["hipheight"] = nil
+                        else
+                            _L.ActiveToggles["hipheight"] = true
+                            _L.ActiveValues["hipheight"] = hhVal
+                        end
                     elseif (not Tfind({"rejoin", "killscript", "config", "makeconfig", "loadconfig", "listconfigs", "deleteconfig", "editconfig", "renameconfig", "cloneconfig", "settoggle", "help", "cmds", "goto", "to", "bring", "kill", "respawn", "refresh", "tp", "reset"}, lowName)) then
                         _L.ActiveToggles[lowName] = true
                         if (Args and #Args > 0 and Args[1] ~= "") then
@@ -959,8 +995,30 @@ AddCommand("walkspeed", {"ws", "speed"}, "changes your walkspeed to the second a
     local Humanoid = GetHumanoid();
     CEnv[1] = Humanoid.WalkSpeed
     SpoofProperty(Humanoid, "WalkSpeed");
-    Humanoid.WalkSpeed = tonumber(Args[1]) or 16
+    local speed = tonumber(Args[1]) or 16
+    Humanoid.WalkSpeed = speed
+    if (_L.ActiveToggles) then
+        if (speed == 16) then
+            _L.ActiveToggles["walkspeed"] = nil
+            _L.ActiveValues["walkspeed"] = nil
+        else
+            _L.ActiveToggles["walkspeed"] = true
+            _L.ActiveValues["walkspeed"] = speed
+        end
+    end
     return "your walkspeed is now " .. Humanoid.WalkSpeed
+end)
+
+AddCommand("unwalkspeed", {"unws", "unspeed"}, "resets your walkspeed to default (16)", {}, function(Caller)
+    local Humanoid = GetHumanoid();
+    if (Humanoid) then
+        Humanoid.WalkSpeed = 16
+    end
+    if (_L.ActiveToggles) then
+        _L.ActiveToggles["walkspeed"] = nil
+        _L.ActiveValues["walkspeed"] = nil
+    end
+    return "walkspeed reset to 16"
 end)
 
 AddCommand("jumppower", {"jp"}, "changes your jumpower to the second argument", {}, function(Caller, Args, CEnv)
@@ -968,17 +1026,61 @@ AddCommand("jumppower", {"jp"}, "changes your jumpower to the second argument", 
     CEnv[1] = Humanoid.JumpPower
     SpoofProperty(Humanoid, "JumpPower");
     SpoofProperty(Humanoid, "UseJumpPower");
+    local jp = tonumber(Args[1]) or 50
     Humanoid.UseJumpPower = true
-    Humanoid.JumpPower = tonumber(Args[1]) or 50
+    Humanoid.JumpPower = jp
+    if (_L.ActiveToggles) then
+        if (jp == 50) then
+            _L.ActiveToggles["jumppower"] = nil
+            _L.ActiveValues["jumppower"] = nil
+        else
+            _L.ActiveToggles["jumppower"] = true
+            _L.ActiveValues["jumppower"] = jp
+        end
+    end
     return "your jumppower is now " .. Humanoid.JumpPower
+end)
+
+AddCommand("unjumppower", {"unjp"}, "resets your jumppower to default (50)", {}, function(Caller)
+    local Humanoid = GetHumanoid();
+    if (Humanoid) then
+        Humanoid.JumpPower = 50
+    end
+    if (_L.ActiveToggles) then
+        _L.ActiveToggles["jumppower"] = nil
+        _L.ActiveValues["jumppower"] = nil
+    end
+    return "jumppower reset to 50"
 end)
 
 AddCommand("hipheight", {"hh"}, "changes your hipheight to the second argument", {}, function(Caller, Args, CEnv)
     local Humanoid = GetHumanoid();
     CEnv[1] = Humanoid.HipHeight
     SpoofProperty(Humanoid, "HipHeight");
-    Humanoid.HipHeight = tonumber(Args[1]) or 0
+    local hh = tonumber(Args[1]) or 0
+    Humanoid.HipHeight = hh
+    if (_L.ActiveToggles) then
+        if (hh == 0) then
+            _L.ActiveToggles["hipheight"] = nil
+            _L.ActiveValues["hipheight"] = nil
+        else
+            _L.ActiveToggles["hipheight"] = true
+            _L.ActiveValues["hipheight"] = hh
+        end
+    end
     return "your hipheight is now " .. Humanoid.HipHeight
+end)
+
+AddCommand("unhipheight", {"unhh"}, "resets your hipheight to default (0)", {}, function(Caller)
+    local Humanoid = GetHumanoid();
+    if (Humanoid) then
+        Humanoid.HipHeight = 0
+    end
+    if (_L.ActiveToggles) then
+        _L.ActiveToggles["hipheight"] = nil
+        _L.ActiveValues["hipheight"] = nil
+    end
+    return "hipheight reset to 0"
 end)
 
 _L.KillCam = {};
@@ -3567,12 +3669,21 @@ AddCommand("noclip", {}, "noclips your character", {3}, function(Caller, Args, C
         end
     end), CEnv);
     Utils.Notify(Caller, "Command", "noclip enabled");
-    CWait(GetHumanoid().Died);
-    DisableAllCmdConnections("noclip");
-    return "noclip disabled"
+    CThread(function()
+        CWait(GetHumanoid().Died);
+        DisableAllCmdConnections("noclip");
+        if (not _L.ActiveToggles or not _L.ActiveToggles["noclip"]) then
+            Utils.Notify(Caller, "Command", "noclip disabled");
+        end
+    end)();
+    return "noclip enabled"
 end)
 
 AddCommand("clip", {"unnoclip"}, "disables noclip", {}, function(Caller, Args)
+    if (_L.ActiveToggles) then
+        _L.ActiveToggles["noclip"] = nil
+        _L.ActiveValues["noclip"] = nil
+    end
     if (not next(LoadCommand("noclip").CmdEnv)) then
         return "you aren't in noclip"
     else
@@ -5102,6 +5213,110 @@ AddConnection(CConnect(CommandBar.Input.FocusLost, function()
         ExecuteCommand(Command, Args, LocalPlayer);
     end
 end), Connections.UI, true);
+
+_L.OnCharacterAdded = function(Char)
+    CThread(function()
+        local Hum = WaitForChild(Char, "Humanoid", 10);
+        local Root = WaitForChild(Char, "HumanoidRootPart", 10);
+        if (not Hum or not Root) then return end
+        wait(0.25);
+
+        -- 1. Restore WalkSpeed if active
+        if (_L.ActiveToggles and _L.ActiveToggles["walkspeed"] and _L.ActiveValues and _L.ActiveValues["walkspeed"]) then
+            local ws = tonumber(_L.ActiveValues["walkspeed"]);
+            if (ws and ws ~= 16) then
+                Hum.WalkSpeed = ws
+                SpoofProperty(Hum, "WalkSpeed");
+                CThread(function()
+                    for i = 1, 6 do
+                        wait(0.25);
+                        if (Hum and Hum.Parent and Hum.WalkSpeed ~= ws and _L.ActiveToggles and _L.ActiveToggles["walkspeed"]) then
+                            Hum.WalkSpeed = ws
+                        end
+                    end
+                end)();
+            end
+        end
+
+        -- 2. Restore JumpPower if active
+        if (_L.ActiveToggles and _L.ActiveToggles["jumppower"] and _L.ActiveValues and _L.ActiveValues["jumppower"]) then
+            local jp = tonumber(_L.ActiveValues["jumppower"]);
+            if (jp and jp ~= 50) then
+                Hum.UseJumpPower = true
+                Hum.JumpPower = jp
+                SpoofProperty(Hum, "JumpPower");
+                CThread(function()
+                    for i = 1, 6 do
+                        wait(0.25);
+                        if (Hum and Hum.Parent and Hum.JumpPower ~= jp and _L.ActiveToggles and _L.ActiveToggles["jumppower"]) then
+                            Hum.UseJumpPower = true
+                            Hum.JumpPower = jp
+                        end
+                    end
+                end)();
+            end
+        end
+
+        -- 3. Restore HipHeight if active
+        if (_L.ActiveToggles and _L.ActiveToggles["hipheight"] and _L.ActiveValues and _L.ActiveValues["hipheight"]) then
+            local hh = tonumber(_L.ActiveValues["hipheight"]);
+            if (hh and hh ~= 0) then
+                Hum.HipHeight = hh
+                SpoofProperty(Hum, "HipHeight");
+            end
+        end
+
+        -- 4. Restore Noclip if active
+        if (_L.ActiveToggles and _L.ActiveToggles["noclip"]) then
+            CThread(function()
+                ExecuteCommand("noclip", {}, LocalPlayer);
+            end)();
+        end
+
+        -- 5. Restore BTools if active
+        if (_L.ActiveToggles and _L.ActiveToggles["btools"]) then
+            CThread(function()
+                ExecuteCommand("btools", {}, LocalPlayer);
+            end)();
+        end
+
+        -- 6. Restore Fly if active
+        if (_L.ActiveToggles and _L.ActiveToggles["fly"]) then
+            local args = (_L.ActiveValues and _L.ActiveValues["fly"]) and {tostring(_L.ActiveValues["fly"])} or {}
+            CThread(function()
+                ExecuteCommand("fly", args, LocalPlayer);
+            end)();
+        elseif (_L.ActiveToggles and _L.ActiveToggles["fly2"]) then
+            local args = (_L.ActiveValues and _L.ActiveValues["fly2"]) and {tostring(_L.ActiveValues["fly2"])} or {}
+            CThread(function()
+                ExecuteCommand("fly2", args, LocalPlayer);
+            end)();
+        end
+
+        -- 7. Restore Swim if active
+        if (_L.ActiveToggles and _L.ActiveToggles["swim"]) then
+            CThread(function()
+                ExecuteCommand("swim", {}, LocalPlayer);
+            end)();
+        end
+
+        -- 8. Restore Float if active
+        if (_L.ActiveToggles and _L.ActiveToggles["float"]) then
+            CThread(function()
+                ExecuteCommand("float", {}, LocalPlayer);
+            end)();
+        end
+
+        -- 9. Restore Spin if active
+        if (_L.ActiveToggles and _L.ActiveToggles["spin"]) then
+            local sp = (_L.ActiveValues and _L.ActiveValues["spin"]) and {tostring(_L.ActiveValues["spin"])} or {}
+            CThread(function()
+                ExecuteCommand("spin", sp, LocalPlayer);
+            end)();
+        end
+    end)();
+end
+AddConnection(CConnect(LocalPlayer.CharacterAdded, _L.OnCharacterAdded), Connections.Players);
 
 local PlayerAdded = function(plr)
     RespawnTimes[plr.Name] = tick();
