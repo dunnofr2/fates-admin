@@ -345,27 +345,8 @@ do
         ManageSection.ScrollingFrame("Load Saved Profile", function(SelectedProfile, State)
             local LoadedData = _L.LoadNamedConfig(SelectedProfile);
             if (LoadedData) then
-                CurrentConfig = LoadedData
-                if (LoadedData.Prefix) then Prefix = LoadedData.Prefix end
-                local SavedToggles = LoadedData.SavedToggles or {}
-                local SavedValues = LoadedData.SavedValues or {}
-                local Count = 0
-                if (Hooks) then
-                    if (SavedToggles["antikick"] ~= nil) then Hooks.AntiKick = SavedToggles["antikick"] end
-                    if (SavedToggles["antiteleport"] ~= nil) then Hooks.AntiTeleport = SavedToggles["antiteleport"] end
-                    if (SavedToggles["nojumpcooldown"] ~= nil) then Hooks.NoJumpCooldown = SavedToggles["nojumpcooldown"] end
-                end
-                for CmdName, CmdState in pairs(SavedToggles) do
-                    if (CmdState and CommandsTable[lower(CmdName)]) then
-                        local Val = SavedValues[CmdName]
-                        local CommandArgs = Val and {tostring(Val)} or {}
-                        pcall(function()
-                            ExecuteCommand(CmdName, CommandArgs, LocalPlayer);
-                        end)
-                        Count = Count + 1
-                    end
-                end
-                Utils.Notify(nil, "Config Loaded", format("Loaded '%s' (%d toggles applied)", SelectedProfile, Count));
+                local Count = _L.ApplyConfig(LoadedData);
+                Utils.Notify(nil, "Config Loaded", format("Loaded '%s' (%d settings & toggles applied)!", SelectedProfile, Count));
             else
                 Utils.Notify(nil, "Config Error", format("Could not load '%s'", SelectedProfile));
             end

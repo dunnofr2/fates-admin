@@ -1138,6 +1138,8 @@ local Connections = {
 _L.CLI = false
 _L.ChatLogsEnabled = true
 _L.GlobalChatLogsEnabled = false
+_L.ActiveToggles = {}
+_L.ActiveValues = {}
 
 _L.EnsureConfigFolder = function()
     if (not isfolder("fates-admin")) then makefolder("fates-admin"); end
@@ -1256,22 +1258,91 @@ _L.SetToggleInConfig = function(confName, cmdName, state, val)
 end
 
 _L.CaptureCurrentSettings = function()
-    local savedToggles = (CurrentConfig and CurrentConfig.SavedToggles) or {}
-    local savedValues = (CurrentConfig and CurrentConfig.SavedValues) or {}
+    local savedToggles = {}
+    local savedValues = {}
 
-    if (Hooks) then
-        savedToggles["antikick"] = Hooks.AntiKick
-        savedToggles["antiteleport"] = Hooks.AntiTeleport
-        savedToggles["nojumpcooldown"] = Hooks.NoJumpCooldown
+    -- 1. Actively tracked command toggles from runtime execution
+    if (_L.ActiveToggles) then
+        for k, v in pairs(_L.ActiveToggles) do
+            if (v) then
+                savedToggles[k] = true
+                if (_L.ActiveValues and _L.ActiveValues[k] ~= nil) then
+                    savedValues[k] = _L.ActiveValues[k]
+                end
+            end
+        end
     end
+
+    -- 2. Inspect CmdEnv of commands that maintain active instances or connections
+    local checkCmd = function(name)
+        local cmd = rawget(CommandsTable, name);
+        if (cmd and cmd.CmdEnv and next(cmd.CmdEnv)) then
+            savedToggles[name] = true
+            if (cmd.CmdEnv[1] and type(cmd.CmdEnv[1]) ~= "table" and type(cmd.CmdEnv[1]) ~= "userdata") then
+                savedValues[name] = cmd.CmdEnv[1]
+            end
+        end
+    end
+
+    checkCmd("fly");
+    checkCmd("fly2");
+    checkCmd("noclip");
+    checkCmd("float");
+    checkCmd("swim");
+    checkCmd("inviscam");
+    checkCmd("crosshair");
+    checkCmd("spin");
+    checkCmd("follow");
+    checkCmd("loopkill");
+    checkCmd("loopgoto");
+    checkCmd("headsit");
+    checkCmd("headstand");
+    checkCmd("autograbtools");
+
+    -- 3. Check ESP status
+    local espCmd = rawget(CommandsTable, "esp");
+    if (espCmd and espCmd.CmdEnv and espCmd.CmdEnv.KillEsp) then
+        savedToggles["esp"] = true
+    end
+
+    -- 4. Check Humanoid properties (WalkSpeed, JumpPower, HipHeight)
+    pcall(function()
+        local Hum = GetHumanoid();
+        if (Hum) then
+            if (Hum.WalkSpeed and Hum.WalkSpeed ~= 16) then
+                savedToggles["walkspeed"] = true
+                savedValues["walkspeed"] = Hum.WalkSpeed
+            end
+            if (Hum.JumpPower and Hum.JumpPower ~= 50) then
+                savedToggles["jumppower"] = true
+                savedValues["jumppower"] = Hum.JumpPower
+            end
+            if (Hum.HipHeight and Hum.HipHeight ~= 0) then
+                savedToggles["hipheight"] = true
+                savedValues["hipheight"] = Hum.HipHeight
+            end
+        end
+    end)
+
+    -- 5. Hooks and client toggles
+    if (Hooks) then
+        if (Hooks.AntiKick) then savedToggles["antikick"] = true end
+        if (Hooks.NoJumpCooldown) then savedToggles["nojumpcooldown"] = true end
+    end
+    if (AntiTeleport) then savedToggles["antiteleport"] = true end
+    if (WideBar) then savedToggles["widebar"] = true end
+    if (Draggable) then savedToggles["draggable"] = true end
+    if (_L.KillCam or KillCam) then savedToggles["killcam"] = true end
+    if (CurrentConfig and CurrentConfig.ChatPrediction) then savedToggles["chatprediction"] = true end
 
     return {
         Prefix = Prefix,
         CommandBarPrefix = split(tostring(CommandBarPrefix), ".")[3] or "Semicolon",
-        ChatPrediction = CurrentConfig and CurrentConfig.ChatPrediction or false,
-        AutoSaveConfig = CurrentConfig and CurrentConfig.AutoSaveConfig or true,
-        KillCam = CurrentConfig and CurrentConfig.KillCam or false,
+        ChatPrediction = (CurrentConfig and CurrentConfig.ChatPrediction) or (savedToggles["chatprediction"] == true),
+        AutoSaveConfig = (CurrentConfig and CurrentConfig.AutoSaveConfig ~= false),
+        KillCam = (_L.KillCam or KillCam or false),
         WideBar = WideBar or false,
+        Draggable = Draggable or false,
         SavedToggles = savedToggles,
         SavedValues = savedValues,
         Macros = clone(Macros or {}),
@@ -2636,6 +2707,24 @@ local ExecuteCommand = function(Name, Args, Caller)
                     end
                     LastCommand[#LastCommand + 1] = {Command.Name, Args, Caller, Command.CmdEnv}
                 end
+                if (_L.ActiveToggles) then
+                    local lowName = lower(Command.Name);
+                    if (sub(lowName, 1, 2) == "un" and rawget(CommandsTable, sub(lowName, 3))) then
+                        _L.ActiveToggles[sub(lowName, 3)] = nil
+                        _L.ActiveValues[sub(lowName, 3)] = nil
+                    elseif (lowName == "clip") then
+                        _L.ActiveToggles["noclip"] = nil
+                        _L.ActiveValues["noclip"] = nil
+                    elseif (lowName == "thaw") then
+                        _L.ActiveToggles["freeze"] = nil
+                        _L.ActiveValues["freeze"] = nil
+                    elseif (not Tfind({"rejoin", "killscript", "config", "makeconfig", "loadconfig", "listconfigs", "deleteconfig", "editconfig", "renameconfig", "cloneconfig", "settoggle", "help", "cmds"}, lowName)) then
+                        _L.ActiveToggles[lowName] = true
+                        if (Args and #Args > 0 and Args[1] ~= "") then
+                            _L.ActiveValues[lowName] = Args[1]
+                        end
+                    end
+                end
             end
             Success = true
         end, function(Err)
@@ -2650,6 +2739,86 @@ local ExecuteCommand = function(Name, Args, Caller)
     else
         Utils.Warn("couldn't find the command " .. Name, Caller);
     end
+end
+
+_L.ApplyConfig = function(LoadedData)
+    if (not LoadedData) then return 0 end
+    CurrentConfig = LoadedData
+    if (LoadedData.Prefix) then Prefix = LoadedData.Prefix end
+    local SavedToggles = LoadedData.SavedToggles or {}
+    local SavedValues = LoadedData.SavedValues or {}
+    local AppliedCount = 0
+
+    if (Hooks) then
+        if (SavedToggles["antikick"] ~= nil) then Hooks.AntiKick = SavedToggles["antikick"] end
+        if (SavedToggles["nojumpcooldown"] ~= nil) then Hooks.NoJumpCooldown = SavedToggles["nojumpcooldown"] end
+    end
+    if (SavedToggles["antiteleport"] ~= nil) then
+        AntiTeleport = SavedToggles["antiteleport"]
+    end
+    if (SavedToggles["widebar"] ~= nil or LoadedData.WideBar ~= nil) then
+        WideBar = (SavedToggles["widebar"] ~= nil and SavedToggles["widebar"]) or (LoadedData.WideBar == true)
+        pcall(function()
+            Utils.Tween(CommandBar, "Quint", "Out", .5, {
+                Size = UDim2.new(0, WideBar and 400 or 200, 0, 35)
+            })
+        end)
+    end
+    if (SavedToggles["chatprediction"] ~= nil or LoadedData.ChatPrediction ~= nil) then
+        local wantPred = (SavedToggles["chatprediction"] ~= nil and SavedToggles["chatprediction"]) or (LoadedData.ChatPrediction == true)
+        if (wantPred and not _L.Frame2 and ToggleChatPrediction) then
+            pcall(ToggleChatPrediction)
+        end
+    end
+    if (SavedToggles["killcam"] ~= nil or LoadedData.KillCam ~= nil) then
+        _L.KillCam = (SavedToggles["killcam"] ~= nil and SavedToggles["killcam"]) or (LoadedData.KillCam == true)
+        KillCam = _L.KillCam
+    end
+
+    for CmdName, State in pairs(SavedToggles) do
+        local low = lower(CmdName)
+        if (not Tfind({"antikick", "antiteleport", "nojumpcooldown", "widebar", "chatprediction", "killcam", "draggable"}, low)) then
+            if (State and rawget(CommandsTable, low)) then
+                local Val = SavedValues[CmdName]
+                local CommandArgs = Val and {tostring(Val)} or {}
+                pcall(function()
+                    ExecuteCommand(low, CommandArgs, LocalPlayer);
+                end)
+                AppliedCount = AppliedCount + 1
+            end
+        else
+            AppliedCount = AppliedCount + 1
+        end
+    end
+
+    if (LoadedData.Macros and #LoadedData.Macros > 0) then
+        Macros = clone(LoadedData.Macros);
+        for i = 1, #Macros do
+            local Macro = Macros[i]
+            if (Macro.Keys) then
+                for i2 = 1, #Macro.Keys do
+                    if (type(Macro.Keys[i2]) == "string") then
+                        Macros[i].Keys[i2] = Enum.KeyCode[Macro.Keys[i2]] or Macro.Keys[i2]
+                    end
+                end
+            end
+        end
+    end
+
+    if (LoadedData.Aliases) then
+        for i, v in next, LoadedData.Aliases do
+            if (CommandsTable[i]) then
+                for i2 = 1, #v do
+                    local Alias = v[i2]
+                    local Add = CommandsTable[i]
+                    Add.Name = Alias
+                    CommandsTable[Alias] = Add
+                end
+            end
+        end
+    end
+
+    return AppliedCount
 end
 
 local ReplaceHumanoid = function(Hum, R)
@@ -6521,26 +6690,7 @@ AddCommand("loadconfig", {"loadconf", "loadc", "load", "useconfig"}, "loads a na
     if (not LoadedData) then
         return format("Could not find config profile '%s'! Use ';configs' to list available profiles.", Name)
     end
-    CurrentConfig = LoadedData
-    if (LoadedData.Prefix) then Prefix = LoadedData.Prefix end
-    local SavedToggles = LoadedData.SavedToggles or {}
-    local SavedValues = LoadedData.SavedValues or {}
-    local AppliedCount = 0
-    if (Hooks) then
-        if (SavedToggles["antikick"] ~= nil) then Hooks.AntiKick = SavedToggles["antikick"] end
-        if (SavedToggles["antiteleport"] ~= nil) then Hooks.AntiTeleport = SavedToggles["antiteleport"] end
-        if (SavedToggles["nojumpcooldown"] ~= nil) then Hooks.NoJumpCooldown = SavedToggles["nojumpcooldown"] end
-    end
-    for CmdName, State in pairs(SavedToggles) do
-        if (State and CommandsTable[lower(CmdName)]) then
-            local Val = SavedValues[CmdName]
-            local CommandArgs = Val and {tostring(Val)} or {}
-            pcall(function()
-                ExecuteCommand(CmdName, CommandArgs, LocalPlayer);
-            end)
-            AppliedCount = AppliedCount + 1
-        end
-    end
+    local AppliedCount = _L.ApplyConfig(LoadedData);
     return format("Loaded config profile '%s'! Applied settings & %d toggles.", Name, AppliedCount)
 end)
 
@@ -8691,27 +8841,8 @@ do
         ManageSection.ScrollingFrame("Load Saved Profile", function(SelectedProfile, State)
             local LoadedData = _L.LoadNamedConfig(SelectedProfile);
             if (LoadedData) then
-                CurrentConfig = LoadedData
-                if (LoadedData.Prefix) then Prefix = LoadedData.Prefix end
-                local SavedToggles = LoadedData.SavedToggles or {}
-                local SavedValues = LoadedData.SavedValues or {}
-                local Count = 0
-                if (Hooks) then
-                    if (SavedToggles["antikick"] ~= nil) then Hooks.AntiKick = SavedToggles["antikick"] end
-                    if (SavedToggles["antiteleport"] ~= nil) then Hooks.AntiTeleport = SavedToggles["antiteleport"] end
-                    if (SavedToggles["nojumpcooldown"] ~= nil) then Hooks.NoJumpCooldown = SavedToggles["nojumpcooldown"] end
-                end
-                for CmdName, CmdState in pairs(SavedToggles) do
-                    if (CmdState and CommandsTable[lower(CmdName)]) then
-                        local Val = SavedValues[CmdName]
-                        local CommandArgs = Val and {tostring(Val)} or {}
-                        pcall(function()
-                            ExecuteCommand(CmdName, CommandArgs, LocalPlayer);
-                        end)
-                        Count = Count + 1
-                    end
-                end
-                Utils.Notify(nil, "Config Loaded", format("Loaded '%s' (%d toggles applied)", SelectedProfile, Count));
+                local Count = _L.ApplyConfig(LoadedData);
+                Utils.Notify(nil, "Config Loaded", format("Loaded '%s' (%d settings & toggles applied)!", SelectedProfile, Count));
             else
                 Utils.Notify(nil, "Config Error", format("Could not load '%s'", SelectedProfile));
             end
