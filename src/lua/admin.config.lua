@@ -385,17 +385,27 @@ do
         end
         KillCam = CurrentConfig.KillCam
         local Aliases = CurrentConfig.Aliases
+        local cmds = _L.CommandsTable or CommandsTable or {}
         if (Aliases) then
             for i, v in next, Aliases do
-                if (CommandsTable[i]) then
+                if (cmds[i]) then
                     for i2 = 1, #v do
                         local Alias = v[i2]
-                        local Add = CommandsTable[i]
+                        local Add = cmds[i]
                         Add.Name = Alias
-                        CommandsTable[Alias] = Add
+                        cmds[Alias] = Add
                     end
                 end
             end
+        end
+        if (CurrentConfig and CurrentConfig.SavedToggles and _L.ApplyConfig) then
+            CThread(function()
+                if (not GetCharacter()) then
+                    LocalPlayer.CharacterAdded:Wait();
+                end
+                wait(0.5);
+                pcall(_L.ApplyConfig, CurrentConfig);
+            end)();
         end
     end)
 end

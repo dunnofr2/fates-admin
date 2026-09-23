@@ -10,6 +10,7 @@ if (not game.IsLoaded(game)) then
 end
 
 local _L = {}
+_L.CommandsTable = {}
 
 _L.start = start or tick();
 local Debug = true
@@ -1151,7 +1152,12 @@ _L.SaveNamedConfig = function(name, configData)
     _L.EnsureConfigFolder();
     name = lower(trim(name or "default"));
     local path = format("fates-admin/configs/%s.json", name);
-    local JSON = JSONEncode(Services.HttpService, configData or Settings);
+    local Success, JSON = pcall(function()
+        return JSONEncode(Services.HttpService, configData or Settings);
+    end)
+    if (not Success or not JSON) then
+        return false, "Failed to encode config to JSON"
+    end
     writefile(path, JSON);
     if (name == "default") then
         writefile("fates-admin/config.json", JSON);
@@ -1163,10 +1169,19 @@ _L.LoadNamedConfig = function(name)
     _L.EnsureConfigFolder();
     name = lower(trim(name or "default"));
     local path = format("fates-admin/configs/%s.json", name);
+    local content = nil
     if (isfile(path)) then
-        return JSONDecode(Services.HttpService, readfile(path));
+        content = readfile(path)
     elseif (name == "default" and isfile("fates-admin/config.json")) then
-        return JSONDecode(Services.HttpService, readfile("fates-admin/config.json"));
+        content = readfile("fates-admin/config.json")
+    end
+    if (content) then
+        local Success, Decoded = pcall(function()
+            return JSONDecode(Services.HttpService, content);
+        end)
+        if (Success and type(Decoded) == "table") then
+            return Decoded
+        end
     end
     return nil
 end
@@ -1274,8 +1289,9 @@ _L.CaptureCurrentSettings = function()
     end
 
     -- 2. Inspect CmdEnv of commands that maintain active instances or connections
+    local cmds = _L.CommandsTable or {}
     local checkCmd = function(name)
-        local cmd = rawget(CommandsTable, name);
+        local cmd = rawget(cmds, name);
         if (cmd and cmd.CmdEnv and next(cmd.CmdEnv)) then
             savedToggles[name] = true
             if (cmd.CmdEnv[1] and type(cmd.CmdEnv[1]) ~= "table" and type(cmd.CmdEnv[1]) ~= "userdata") then
@@ -1300,12 +1316,32 @@ _L.CaptureCurrentSettings = function()
     checkCmd("autograbtools");
 
     -- 3. Check ESP status
-    local espCmd = rawget(CommandsTable, "esp");
+    local espCmd = rawget(cmds, "esp");
     if (espCmd and espCmd.CmdEnv and espCmd.CmdEnv.KillEsp) then
         savedToggles["esp"] = true
     end
 
-    -- 4. Check Humanoid properties (WalkSpeed, JumpPower, HipHeight)
+    -- 4. Check BTools (HopperBin in Backpack or Character)
+    pcall(function()
+        local bp = LocalPlayer and LocalPlayer.Backpack
+        local char = LocalPlayer and LocalPlayer.Character
+        local foundBtools = false
+        if (bp) then
+            for _, item in pairs(bp:GetChildren()) do
+                if (item:IsA("HopperBin")) then foundBtools = true break end
+            end
+        end
+        if (not foundBtools and char) then
+            for _, item in pairs(char:GetChildren()) do
+                if (item:IsA("HopperBin")) then foundBtools = true break end
+            end
+        end
+        if (foundBtools) then
+            savedToggles["btools"] = true
+        end
+    end)
+
+    -- 5. Check Humanoid properties (WalkSpeed, JumpPower, HipHeight)
     pcall(function()
         local Hum = GetHumanoid();
         if (Hum) then
@@ -1324,7 +1360,7 @@ _L.CaptureCurrentSettings = function()
         end
     end)
 
-    -- 5. Hooks and client toggles
+    -- 6. Hooks and client toggles
     if (Hooks) then
         if (Hooks.AntiKick) then savedToggles["antikick"] = true end
         if (Hooks.NoJumpCooldown) then savedToggles["nojumpcooldown"] = true end
@@ -1335,16 +1371,32 @@ _L.CaptureCurrentSettings = function()
     if (_L.KillCam or KillCam) then savedToggles["killcam"] = true end
     if (CurrentConfig and CurrentConfig.ChatPrediction) then savedToggles["chatprediction"] = true end
 
+    -- Clean values to ensure they are strictly JSON-safe primitives
+    local cleanToggles = {}
+    for k, v in pairs(savedToggles) do
+        if (type(k) == "string" and v == true) then
+            cleanToggles[k] = true
+        end
+    end
+    local cleanValues = {}
+    for k, v in pairs(savedValues) do
+        local tk = type(k)
+        local tv = type(v)
+        if (tk == "string" and (tv == "number" or tv == "string" or tv == "boolean")) then
+            cleanValues[k] = v
+        end
+    end
+
     return {
         Prefix = Prefix,
         CommandBarPrefix = split(tostring(CommandBarPrefix), ".")[3] or "Semicolon",
-        ChatPrediction = (CurrentConfig and CurrentConfig.ChatPrediction) or (savedToggles["chatprediction"] == true),
+        ChatPrediction = (CurrentConfig and CurrentConfig.ChatPrediction) or (cleanToggles["chatprediction"] == true),
         AutoSaveConfig = (CurrentConfig and CurrentConfig.AutoSaveConfig ~= false),
         KillCam = (_L.KillCam or KillCam or false),
         WideBar = WideBar or false,
         Draggable = Draggable or false,
-        SavedToggles = savedToggles,
-        SavedValues = savedValues,
+        SavedToggles = cleanToggles,
+        SavedValues = cleanValues,
         Macros = clone(Macros or {}),
         Aliases = clone((CurrentConfig and CurrentConfig.Aliases) or {})
     }
@@ -2545,7 +2597,7 @@ end
 
 
 -- commands table
-local CommandsTable = {}
+local CommandsTable = _L.CommandsTable
 local RespawnTimes = {}
 
 local HasTool = function(plr)
@@ -2697,6 +2749,24 @@ local ExecuteCommand = function(Name, Args, Caller)
         local Success, Ret = xpcall(function()
             local Func = Command.Function();
             if (Func) then
+                if (_L.ActiveToggles) then
+                    local lowName = lower(Command.Name);
+                    if (sub(lowName, 1, 2) == "un" and rawget(_L.CommandsTable, sub(lowName, 3))) then
+                        _L.ActiveToggles[sub(lowName, 3)] = nil
+                        _L.ActiveValues[sub(lowName, 3)] = nil
+                    elseif (lowName == "clip") then
+                        _L.ActiveToggles["noclip"] = nil
+                        _L.ActiveValues["noclip"] = nil
+                    elseif (lowName == "thaw") then
+                        _L.ActiveToggles["freeze"] = nil
+                        _L.ActiveValues["freeze"] = nil
+                    elseif (not Tfind({"rejoin", "killscript", "config", "makeconfig", "loadconfig", "listconfigs", "deleteconfig", "editconfig", "renameconfig", "cloneconfig", "settoggle", "help", "cmds", "goto", "to", "bring", "kill", "respawn", "refresh", "tp", "reset"}, lowName)) then
+                        _L.ActiveToggles[lowName] = true
+                        if (Args and #Args > 0 and Args[1] ~= "") then
+                            _L.ActiveValues[lowName] = Args[1]
+                        end
+                    end
+                end
                 local Executed = Func(Caller, Args, Command.CmdEnv);
                 if (Executed) then
                     Utils.Notify(Caller, "Command", Executed);
@@ -2706,24 +2776,6 @@ local ExecuteCommand = function(Name, Args, Caller)
                         LastCommand = shift(LastCommand);
                     end
                     LastCommand[#LastCommand + 1] = {Command.Name, Args, Caller, Command.CmdEnv}
-                end
-                if (_L.ActiveToggles) then
-                    local lowName = lower(Command.Name);
-                    if (sub(lowName, 1, 2) == "un" and rawget(CommandsTable, sub(lowName, 3))) then
-                        _L.ActiveToggles[sub(lowName, 3)] = nil
-                        _L.ActiveValues[sub(lowName, 3)] = nil
-                    elseif (lowName == "clip") then
-                        _L.ActiveToggles["noclip"] = nil
-                        _L.ActiveValues["noclip"] = nil
-                    elseif (lowName == "thaw") then
-                        _L.ActiveToggles["freeze"] = nil
-                        _L.ActiveValues["freeze"] = nil
-                    elseif (not Tfind({"rejoin", "killscript", "config", "makeconfig", "loadconfig", "listconfigs", "deleteconfig", "editconfig", "renameconfig", "cloneconfig", "settoggle", "help", "cmds"}, lowName)) then
-                        _L.ActiveToggles[lowName] = true
-                        if (Args and #Args > 0 and Args[1] ~= "") then
-                            _L.ActiveValues[lowName] = Args[1]
-                        end
-                    end
                 end
             end
             Success = true
@@ -2775,14 +2827,17 @@ _L.ApplyConfig = function(LoadedData)
         KillCam = _L.KillCam
     end
 
+    local cmds = _L.CommandsTable or CommandsTable or {}
     for CmdName, State in pairs(SavedToggles) do
         local low = lower(CmdName)
         if (not Tfind({"antikick", "antiteleport", "nojumpcooldown", "widebar", "chatprediction", "killcam", "draggable"}, low)) then
-            if (State and rawget(CommandsTable, low)) then
+            if (State and rawget(cmds, low)) then
                 local Val = SavedValues[CmdName]
                 local CommandArgs = Val and {tostring(Val)} or {}
                 pcall(function()
-                    ExecuteCommand(low, CommandArgs, LocalPlayer);
+                    CThread(function()
+                        ExecuteCommand(low, CommandArgs, LocalPlayer);
+                    end)();
                 end)
                 AppliedCount = AppliedCount + 1
             end
@@ -8881,17 +8936,27 @@ do
         end
         KillCam = CurrentConfig.KillCam
         local Aliases = CurrentConfig.Aliases
+        local cmds = _L.CommandsTable or CommandsTable or {}
         if (Aliases) then
             for i, v in next, Aliases do
-                if (CommandsTable[i]) then
+                if (cmds[i]) then
                     for i2 = 1, #v do
                         local Alias = v[i2]
-                        local Add = CommandsTable[i]
+                        local Add = cmds[i]
                         Add.Name = Alias
-                        CommandsTable[Alias] = Add
+                        cmds[Alias] = Add
                     end
                 end
             end
+        end
+        if (CurrentConfig and CurrentConfig.SavedToggles and _L.ApplyConfig) then
+            CThread(function()
+                if (not GetCharacter()) then
+                    LocalPlayer.CharacterAdded:Wait();
+                end
+                wait(0.5);
+                pcall(_L.ApplyConfig, CurrentConfig);
+            end)();
         end
     end)
 end
