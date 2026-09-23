@@ -203,6 +203,63 @@ _L.DeleteNamedConfig = function(name)
     return false
 end
 
+_L.RenameNamedConfig = function(oldName, newName)
+    _L.EnsureConfigFolder();
+    oldName = lower(trim(oldName or ""));
+    newName = lower(trim(newName or ""));
+    if (oldName == "" or newName == "") then return false, "Config names cannot be empty" end
+    if (oldName == newName) then return false, "Old and new config names are identical" end
+    local oldPath = format("fates-admin/configs/%s.json", oldName);
+    local newPath = format("fates-admin/configs/%s.json", newName);
+    if (not isfile(oldPath)) then
+        if (oldName == "default" and isfile("fates-admin/config.json")) then
+            oldPath = "fates-admin/config.json"
+        else
+            return false, format("Config '%s' does not exist", oldName)
+        end
+    end
+    local data = readfile(oldPath);
+    writefile(newPath, data);
+    if (oldName ~= "default") then
+        delfile(oldPath);
+    end
+    return true, format("Config '%s' renamed to '%s'!", oldName, newName)
+end
+
+_L.CopyNamedConfig = function(srcName, dstName)
+    _L.EnsureConfigFolder();
+    srcName = lower(trim(srcName or ""));
+    dstName = lower(trim(dstName or ""));
+    if (srcName == "" or dstName == "") then return false, "Config names cannot be empty" end
+    local srcPath = format("fates-admin/configs/%s.json", srcName);
+    local dstPath = format("fates-admin/configs/%s.json", dstName);
+    if (not isfile(srcPath)) then
+        if (srcName == "default" and isfile("fates-admin/config.json")) then
+            srcPath = "fates-admin/config.json"
+        else
+            return false, format("Config '%s' does not exist", srcName)
+        end
+    end
+    local data = readfile(srcPath);
+    writefile(dstPath, data);
+    return true, format("Config '%s' copied to '%s'!", srcName, dstName)
+end
+
+_L.SetToggleInConfig = function(confName, cmdName, state, val)
+    _L.EnsureConfigFolder();
+    confName = lower(trim(confName or "default"));
+    cmdName = lower(trim(cmdName or ""));
+    local data = _L.LoadNamedConfig(confName) or (CurrentConfig and clone(CurrentConfig)) or clone(Settings);
+    data.SavedToggles = data.SavedToggles or {}
+    data.SavedValues = data.SavedValues or {}
+    data.SavedToggles[cmdName] = state
+    if (val ~= nil) then
+        data.SavedValues[cmdName] = val
+    end
+    _L.SaveNamedConfig(confName, data);
+    return true
+end
+
 _L.CaptureCurrentSettings = function()
     local savedToggles = (CurrentConfig and CurrentConfig.SavedToggles) or {}
     local savedValues = (CurrentConfig and CurrentConfig.SavedValues) or {}
@@ -4427,6 +4484,39 @@ AddCommand("deleteconfig", {"delconfig", "rmconfig", "removeconfig"}, "deletes a
     else
         return format("Config profile '%s' does not exist.", Name)
     end
+end)
+
+AddCommand("editconfig", {"updateconfig", "savecurrentto"}, "updates an existing config profile with your currently enabled settings (e.g. ;editconfig legit)", {}, function(Caller, Args)
+    local Name = (Args and Args[1] and Args[1] ~= "") and Args[1] or "default"
+    local ConfigData = _L.CaptureCurrentSettings();
+    _L.SaveNamedConfig(Name, ConfigData);
+    CurrentConfig = ConfigData
+    return format("Config profile '%s' updated with current settings!", Name)
+end)
+
+AddCommand("renameconfig", {"renameconf", "nameconfig", "mvconfig"}, "renames an existing config profile (e.g. ;renameconfig old_name new_name)", {}, function(Caller, Args)
+    if (not Args or #Args < 2) then return "Usage: ;renameconfig <old_name> <new_name>" end
+    local OldName = Args[1]
+    local NewName = Args[2]
+    local Success, Msg = _L.RenameNamedConfig(OldName, NewName);
+    return Msg
+end)
+
+AddCommand("cloneconfig", {"copyconfig", "cpconfig"}, "clones a config profile to a new name (e.g. ;cloneconfig source target)", {}, function(Caller, Args)
+    if (not Args or #Args < 2) then return "Usage: ;cloneconfig <source_name> <target_name>" end
+    local Src = Args[1]
+    local Dst = Args[2]
+    local Success, Msg = _L.CopyNamedConfig(Src, Dst);
+    return Msg
+end)
+
+AddCommand("settoggle", {"settoggleconf", "toggleval"}, "sets a toggle or value inside a config (e.g. ;settoggle fly true or ;settoggle fly true 50)", {}, function(Caller, Args)
+    if (not Args or #Args < 2) then return "Usage: ;settoggle <command_name> <true/false> [optional_value]" end
+    local Cmd = Args[1]
+    local State = (lower(Args[2]) == "true" or Args[2] == "1")
+    local Val = Args[3]
+    _L.SetToggleInConfig("default", Cmd, State, Val);
+    return format("Set toggle '%s' = %s in config", Cmd, tostring(State))
 end)
 
 AddCommand("deletetool", {"deltool"}, "deletes your equipped tool", {1}, function()

@@ -944,6 +944,25 @@ do
                 UpdateClone();
             end
 
+            function ElementLibrary.TextInput(Title, DefaultText, Callback)
+                local Item = Clone(GuiObjects.Elements.TextboxKeybind);
+                Item.Title.Text = Title
+                local Container = Item.Container
+                Container.Text = DefaultText or ""
+                pcall(function()
+                    Container.ClearTextOnFocus = false
+                end)
+                AddConnection(CConnect(Container.FocusLost, function(enterPressed)
+                    if (Callback and Container.Text and Container.Text ~= "") then
+                        Callback(Container.Text, enterPressed);
+                    end
+                end))
+                Item.Visible = true
+                Item.Parent = Section.Options
+                UpdateClone();
+                return Item
+            end
+
             function ElementLibrary.ColorPicker(Title, DefaultColor, Callback)
                 local SelectColor = Clone(ColorElements.SelectColor);
                 local CurrentColor = DefaultColor

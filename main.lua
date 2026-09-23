@@ -1198,6 +1198,63 @@ _L.DeleteNamedConfig = function(name)
     return false
 end
 
+_L.RenameNamedConfig = function(oldName, newName)
+    _L.EnsureConfigFolder();
+    oldName = lower(trim(oldName or ""));
+    newName = lower(trim(newName or ""));
+    if (oldName == "" or newName == "") then return false, "Config names cannot be empty" end
+    if (oldName == newName) then return false, "Old and new config names are identical" end
+    local oldPath = format("fates-admin/configs/%s.json", oldName);
+    local newPath = format("fates-admin/configs/%s.json", newName);
+    if (not isfile(oldPath)) then
+        if (oldName == "default" and isfile("fates-admin/config.json")) then
+            oldPath = "fates-admin/config.json"
+        else
+            return false, format("Config '%s' does not exist", oldName)
+        end
+    end
+    local data = readfile(oldPath);
+    writefile(newPath, data);
+    if (oldName ~= "default") then
+        delfile(oldPath);
+    end
+    return true, format("Config '%s' renamed to '%s'!", oldName, newName)
+end
+
+_L.CopyNamedConfig = function(srcName, dstName)
+    _L.EnsureConfigFolder();
+    srcName = lower(trim(srcName or ""));
+    dstName = lower(trim(dstName or ""));
+    if (srcName == "" or dstName == "") then return false, "Config names cannot be empty" end
+    local srcPath = format("fates-admin/configs/%s.json", srcName);
+    local dstPath = format("fates-admin/configs/%s.json", dstName);
+    if (not isfile(srcPath)) then
+        if (srcName == "default" and isfile("fates-admin/config.json")) then
+            srcPath = "fates-admin/config.json"
+        else
+            return false, format("Config '%s' does not exist", srcName)
+        end
+    end
+    local data = readfile(srcPath);
+    writefile(dstPath, data);
+    return true, format("Config '%s' copied to '%s'!", srcName, dstName)
+end
+
+_L.SetToggleInConfig = function(confName, cmdName, state, val)
+    _L.EnsureConfigFolder();
+    confName = lower(trim(confName or "default"));
+    cmdName = lower(trim(cmdName or ""));
+    local data = _L.LoadNamedConfig(confName) or (CurrentConfig and clone(CurrentConfig)) or clone(Settings);
+    data.SavedToggles = data.SavedToggles or {}
+    data.SavedValues = data.SavedValues or {}
+    data.SavedToggles[cmdName] = state
+    if (val ~= nil) then
+        data.SavedValues[cmdName] = val
+    end
+    _L.SaveNamedConfig(confName, data);
+    return true
+end
+
 _L.CaptureCurrentSettings = function()
     local savedToggles = (CurrentConfig and CurrentConfig.SavedToggles) or {}
     local savedValues = (CurrentConfig and CurrentConfig.SavedValues) or {}
@@ -6503,6 +6560,39 @@ AddCommand("deleteconfig", {"delconfig", "rmconfig", "removeconfig"}, "deletes a
     end
 end)
 
+AddCommand("editconfig", {"updateconfig", "savecurrentto"}, "updates an existing config profile with your currently enabled settings (e.g. ;editconfig legit)", {}, function(Caller, Args)
+    local Name = (Args and Args[1] and Args[1] ~= "") and Args[1] or "default"
+    local ConfigData = _L.CaptureCurrentSettings();
+    _L.SaveNamedConfig(Name, ConfigData);
+    CurrentConfig = ConfigData
+    return format("Config profile '%s' updated with current settings!", Name)
+end)
+
+AddCommand("renameconfig", {"renameconf", "nameconfig", "mvconfig"}, "renames an existing config profile (e.g. ;renameconfig old_name new_name)", {}, function(Caller, Args)
+    if (not Args or #Args < 2) then return "Usage: ;renameconfig <old_name> <new_name>" end
+    local OldName = Args[1]
+    local NewName = Args[2]
+    local Success, Msg = _L.RenameNamedConfig(OldName, NewName);
+    return Msg
+end)
+
+AddCommand("cloneconfig", {"copyconfig", "cpconfig"}, "clones a config profile to a new name (e.g. ;cloneconfig source target)", {}, function(Caller, Args)
+    if (not Args or #Args < 2) then return "Usage: ;cloneconfig <source_name> <target_name>" end
+    local Src = Args[1]
+    local Dst = Args[2]
+    local Success, Msg = _L.CopyNamedConfig(Src, Dst);
+    return Msg
+end)
+
+AddCommand("settoggle", {"settoggleconf", "toggleval"}, "sets a toggle or value inside a config (e.g. ;settoggle fly true or ;settoggle fly true 50)", {}, function(Caller, Args)
+    if (not Args or #Args < 2) then return "Usage: ;settoggle <command_name> <true/false> [optional_value]" end
+    local Cmd = Args[1]
+    local State = (lower(Args[2]) == "true" or Args[2] == "1")
+    local Val = Args[3]
+    _L.SetToggleInConfig("default", Cmd, State, Val);
+    return format("Set toggle '%s' = %s in config", Cmd, tostring(State))
+end)
+
 AddCommand("deletetool", {"deltool"}, "deletes your equipped tool", {1}, function()
     local Tool = FindFirstChildWhichIsA(GetCharacter(), "Tool");
     if (Tool) then
@@ -7793,6 +7883,25 @@ do
                 UpdateClone();
             end
 
+            function ElementLibrary.TextInput(Title, DefaultText, Callback)
+                local Item = Clone(GuiObjects.Elements.TextboxKeybind);
+                Item.Title.Text = Title
+                local Container = Item.Container
+                Container.Text = DefaultText or ""
+                pcall(function()
+                    Container.ClearTextOnFocus = false
+                end)
+                AddConnection(CConnect(Container.FocusLost, function(enterPressed)
+                    if (Callback and Container.Text and Container.Text ~= "") then
+                        Callback(Container.Text, enterPressed);
+                    end
+                end))
+                Item.Visible = true
+                Item.Parent = Section.Options
+                UpdateClone();
+                return Item
+            end
+
             function ElementLibrary.ColorPicker(Title, DefaultColor, Callback)
                 local SelectColor = Clone(ColorElements.SelectColor);
                 local CurrentColor = DefaultColor
@@ -8527,10 +8636,36 @@ do
         end)
 
         local ConfigsPage = ConfigUILib.NewPage("Configs");
-        local ProfilesSection = ConfigsPage.NewSection("Profiles");
+        local ConfigActions = ConfigsPage.NewSection("Actions");
+
+        ConfigActions.TextInput("Create / Save Config", "", function(Name)
+            if (Name and Name ~= "") then
+                local ConfigData = _L.CaptureCurrentSettings and _L.CaptureCurrentSettings() or GetConfig();
+                _L.SaveNamedConfig(Name, ConfigData);
+                CurrentConfig = ConfigData
+                Utils.Notify(nil, "Config Saved", format("Saved current settings to profile '%s'!", Name));
+            end
+        end)
+
+        ConfigActions.TextInput("Rename Config (old:new)", "", function(Text)
+            if (Text and Text ~= "") then
+                local parts = split(Text, ":");
+                if (#parts < 2) then
+                    parts = split(Text, " ");
+                end
+                if (#parts >= 2) then
+                    local oldName = trim(parts[1]);
+                    local newName = trim(parts[2]);
+                    local success, msg = _L.RenameNamedConfig(oldName, newName);
+                    Utils.Notify(nil, success and "Config Renamed" or "Rename Failed", msg);
+                else
+                    Utils.Notify(nil, "Rename Error", "Format must be: old_name:new_name");
+                end
+            end
+        end)
 
         local SaveDefaultToggle;
-        SaveDefaultToggle = ProfilesSection.Toggle("Save Current as Default", false, function(Callback)
+        SaveDefaultToggle = ConfigActions.Toggle("Save Current as Default", false, function(Callback)
             local ConfigData = _L.CaptureCurrentSettings and _L.CaptureCurrentSettings() or GetConfig();
             _L.SaveNamedConfig("default", ConfigData);
             CurrentConfig = ConfigData
@@ -8539,11 +8674,13 @@ do
             Utils.Notify(nil, "Config Saved", "Saved current settings to default profile!");
         end)
 
-        ProfilesSection.Toggle("Auto Save Config", CurrentConf.AutoSaveConfig or true, function(Callback)
+        ConfigActions.Toggle("Auto Save Config", CurrentConf.AutoSaveConfig or true, function(Callback)
             CurrentConfig.AutoSaveConfig = Callback
             SetConfig({ AutoSaveConfig = Callback });
             Utils.Notify(nil, "Auto Save", format("Auto save config is now %s", Callback and "enabled" or "disabled"));
         end)
+
+        local ManageSection = ConfigsPage.NewSection("Manage Profiles");
 
         local ConfigMap = {}
         local ConfList = _L.ListNamedConfigs()
@@ -8551,7 +8688,7 @@ do
             ConfigMap[ConfList[i]] = true
         end
 
-        ProfilesSection.ScrollingFrame("Load Saved Profile", function(SelectedProfile, State)
+        ManageSection.ScrollingFrame("Load Saved Profile", function(SelectedProfile, State)
             local LoadedData = _L.LoadNamedConfig(SelectedProfile);
             if (LoadedData) then
                 CurrentConfig = LoadedData
@@ -8580,7 +8717,14 @@ do
             end
         end, ConfigMap, {"Load", "Load"});
 
-        ProfilesSection.ScrollingFrame("Delete Profile", function(SelectedProfile, State)
+        ManageSection.ScrollingFrame("Overwrite / Edit Profile", function(SelectedProfile, State)
+            local ConfigData = _L.CaptureCurrentSettings and _L.CaptureCurrentSettings() or GetConfig();
+            _L.SaveNamedConfig(SelectedProfile, ConfigData);
+            CurrentConfig = ConfigData
+            Utils.Notify(nil, "Config Overwritten", format("Updated profile '%s' with current active settings!", SelectedProfile));
+        end, ConfigMap, {"Save", "Save"});
+
+        ManageSection.ScrollingFrame("Delete Profile", function(SelectedProfile, State)
             if (SelectedProfile ~= "default") then
                 _L.DeleteNamedConfig(SelectedProfile);
                 Utils.Notify(nil, "Config Deleted", format("Deleted '%s'", SelectedProfile));

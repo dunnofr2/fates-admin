@@ -290,10 +290,36 @@ do
         end)
 
         local ConfigsPage = ConfigUILib.NewPage("Configs");
-        local ProfilesSection = ConfigsPage.NewSection("Profiles");
+        local ConfigActions = ConfigsPage.NewSection("Actions");
+
+        ConfigActions.TextInput("Create / Save Config", "", function(Name)
+            if (Name and Name ~= "") then
+                local ConfigData = _L.CaptureCurrentSettings and _L.CaptureCurrentSettings() or GetConfig();
+                _L.SaveNamedConfig(Name, ConfigData);
+                CurrentConfig = ConfigData
+                Utils.Notify(nil, "Config Saved", format("Saved current settings to profile '%s'!", Name));
+            end
+        end)
+
+        ConfigActions.TextInput("Rename Config (old:new)", "", function(Text)
+            if (Text and Text ~= "") then
+                local parts = split(Text, ":");
+                if (#parts < 2) then
+                    parts = split(Text, " ");
+                end
+                if (#parts >= 2) then
+                    local oldName = trim(parts[1]);
+                    local newName = trim(parts[2]);
+                    local success, msg = _L.RenameNamedConfig(oldName, newName);
+                    Utils.Notify(nil, success and "Config Renamed" or "Rename Failed", msg);
+                else
+                    Utils.Notify(nil, "Rename Error", "Format must be: old_name:new_name");
+                end
+            end
+        end)
 
         local SaveDefaultToggle;
-        SaveDefaultToggle = ProfilesSection.Toggle("Save Current as Default", false, function(Callback)
+        SaveDefaultToggle = ConfigActions.Toggle("Save Current as Default", false, function(Callback)
             local ConfigData = _L.CaptureCurrentSettings and _L.CaptureCurrentSettings() or GetConfig();
             _L.SaveNamedConfig("default", ConfigData);
             CurrentConfig = ConfigData
@@ -302,11 +328,13 @@ do
             Utils.Notify(nil, "Config Saved", "Saved current settings to default profile!");
         end)
 
-        ProfilesSection.Toggle("Auto Save Config", CurrentConf.AutoSaveConfig or true, function(Callback)
+        ConfigActions.Toggle("Auto Save Config", CurrentConf.AutoSaveConfig or true, function(Callback)
             CurrentConfig.AutoSaveConfig = Callback
             SetConfig({ AutoSaveConfig = Callback });
             Utils.Notify(nil, "Auto Save", format("Auto save config is now %s", Callback and "enabled" or "disabled"));
         end)
+
+        local ManageSection = ConfigsPage.NewSection("Manage Profiles");
 
         local ConfigMap = {}
         local ConfList = _L.ListNamedConfigs()
@@ -314,7 +342,7 @@ do
             ConfigMap[ConfList[i]] = true
         end
 
-        ProfilesSection.ScrollingFrame("Load Saved Profile", function(SelectedProfile, State)
+        ManageSection.ScrollingFrame("Load Saved Profile", function(SelectedProfile, State)
             local LoadedData = _L.LoadNamedConfig(SelectedProfile);
             if (LoadedData) then
                 CurrentConfig = LoadedData
@@ -343,7 +371,14 @@ do
             end
         end, ConfigMap, {"Load", "Load"});
 
-        ProfilesSection.ScrollingFrame("Delete Profile", function(SelectedProfile, State)
+        ManageSection.ScrollingFrame("Overwrite / Edit Profile", function(SelectedProfile, State)
+            local ConfigData = _L.CaptureCurrentSettings and _L.CaptureCurrentSettings() or GetConfig();
+            _L.SaveNamedConfig(SelectedProfile, ConfigData);
+            CurrentConfig = ConfigData
+            Utils.Notify(nil, "Config Overwritten", format("Updated profile '%s' with current active settings!", SelectedProfile));
+        end, ConfigMap, {"Save", "Save"});
+
+        ManageSection.ScrollingFrame("Delete Profile", function(SelectedProfile, State)
             if (SelectedProfile ~= "default") then
                 _L.DeleteNamedConfig(SelectedProfile);
                 Utils.Notify(nil, "Config Deleted", format("Deleted '%s'", SelectedProfile));
