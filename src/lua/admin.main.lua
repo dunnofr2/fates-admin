@@ -144,14 +144,14 @@ _L.CLI = false
 _L.ChatLogsEnabled = true
 _L.GlobalChatLogsEnabled = false
 
-local EnsureConfigFolder = function()
+_L.EnsureConfigFolder = function()
     if (not isfolder("fates-admin")) then makefolder("fates-admin"); end
     if (not isfolder("fates-admin/configs")) then makefolder("fates-admin/configs"); end
     if (not isfolder("fates-admin/plugins")) then makefolder("fates-admin/plugins"); end
 end
 
-local SaveNamedConfig = function(name, configData)
-    EnsureConfigFolder();
+_L.SaveNamedConfig = function(name, configData)
+    _L.EnsureConfigFolder();
     name = lower(trim(name or "default"));
     local path = format("fates-admin/configs/%s.json", name);
     local JSON = JSONEncode(Services.HttpService, configData or Settings);
@@ -162,8 +162,8 @@ local SaveNamedConfig = function(name, configData)
     return path
 end
 
-local LoadNamedConfig = function(name)
-    EnsureConfigFolder();
+_L.LoadNamedConfig = function(name)
+    _L.EnsureConfigFolder();
     name = lower(trim(name or "default"));
     local path = format("fates-admin/configs/%s.json", name);
     if (isfile(path)) then
@@ -174,8 +174,8 @@ local LoadNamedConfig = function(name)
     return nil
 end
 
-local ListNamedConfigs = function()
-    EnsureConfigFolder();
+_L.ListNamedConfigs = function()
+    _L.EnsureConfigFolder();
     local configs = {}
     if (listfiles) then
         local files = listfiles("fates-admin/configs");
@@ -192,8 +192,8 @@ local ListNamedConfigs = function()
     return configs
 end
 
-local DeleteNamedConfig = function(name)
-    EnsureConfigFolder();
+_L.DeleteNamedConfig = function(name)
+    _L.EnsureConfigFolder();
     name = lower(trim(name));
     local path = format("fates-admin/configs/%s.json", name);
     if (isfile(path)) then
@@ -4379,14 +4379,14 @@ end)
 AddCommand("makeconfig", {"createconfig", "newconfig", "saveconfig", "saveconf", "savec", "save"}, "creates or saves a named config profile with your current enabled settings (e.g. ;makeconfig legit)", {}, function(Caller, Args)
     local Name = (Args and Args[1] and Args[1] ~= "") and Args[1] or "default"
     local ConfigData = _L.CaptureCurrentSettings();
-    SaveNamedConfig(Name, ConfigData);
+    _L.SaveNamedConfig(Name, ConfigData);
     CurrentConfig = ConfigData
     return format("Config profile '%s' created & saved successfully to fates-admin/configs/%s.json!", Name, lower(Name))
 end)
 
 AddCommand("loadconfig", {"loadconf", "loadc", "load", "useconfig"}, "loads a named config profile from disk (e.g. ;loadconfig legit)", {}, function(Caller, Args)
     local Name = (Args and Args[1] and Args[1] ~= "") and Args[1] or "default"
-    local LoadedData = LoadNamedConfig(Name);
+    local LoadedData = _L.LoadNamedConfig(Name);
     if (not LoadedData) then
         return format("Could not find config profile '%s'! Use ';configs' to list available profiles.", Name)
     end
@@ -4414,14 +4414,14 @@ AddCommand("loadconfig", {"loadconf", "loadc", "load", "useconfig"}, "loads a na
 end)
 
 AddCommand("listconfigs", {"configs", "listconf", "conflist"}, "lists all saved named config profiles", {}, function(Caller)
-    local Profiles = ListNamedConfigs();
+    local Profiles = _L.ListNamedConfigs();
     return format("Saved Config Profiles (%d): %s", #Profiles, concat(Profiles, ", "))
 end)
 
 AddCommand("deleteconfig", {"delconfig", "rmconfig", "removeconfig"}, "deletes a specified saved config profile (e.g. ;deleteconfig rage)", {}, function(Caller, Args)
     if (not Args or #Args < 1) then return "Usage: ;deleteconfig <profile_name>" end
     local Name = Args[1]
-    local Success = DeleteNamedConfig(Name);
+    local Success = _L.DeleteNamedConfig(Name);
     if (Success) then
         return format("Config profile '%s' deleted successfully!", Name)
     else

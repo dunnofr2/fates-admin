@@ -295,7 +295,7 @@ do
         local SaveDefaultToggle;
         SaveDefaultToggle = ProfilesSection.Toggle("Save Current as Default", false, function(Callback)
             local ConfigData = _L.CaptureCurrentSettings and _L.CaptureCurrentSettings() or GetConfig();
-            SaveNamedConfig("default", ConfigData);
+            _L.SaveNamedConfig("default", ConfigData);
             CurrentConfig = ConfigData
             wait(.3);
             SaveDefaultToggle();
@@ -309,13 +309,13 @@ do
         end)
 
         local ConfigMap = {}
-        local ConfList = ListNamedConfigs()
+        local ConfList = _L.ListNamedConfigs()
         for i = 1, #ConfList do
             ConfigMap[ConfList[i]] = true
         end
 
         ProfilesSection.ScrollingFrame("Load Saved Profile", function(SelectedProfile, State)
-            local LoadedData = LoadNamedConfig(SelectedProfile);
+            local LoadedData = _L.LoadNamedConfig(SelectedProfile);
             if (LoadedData) then
                 CurrentConfig = LoadedData
                 if (LoadedData.Prefix) then Prefix = LoadedData.Prefix end
@@ -345,7 +345,7 @@ do
 
         ProfilesSection.ScrollingFrame("Delete Profile", function(SelectedProfile, State)
             if (SelectedProfile ~= "default") then
-                DeleteNamedConfig(SelectedProfile);
+                _L.DeleteNamedConfig(SelectedProfile);
                 Utils.Notify(nil, "Config Deleted", format("Deleted '%s'", SelectedProfile));
             else
                 Utils.Notify(nil, "Config", "Cannot delete default profile");
